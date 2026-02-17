@@ -1,0 +1,4 @@
+classes.txt
+*.jar
+target
+.idea
