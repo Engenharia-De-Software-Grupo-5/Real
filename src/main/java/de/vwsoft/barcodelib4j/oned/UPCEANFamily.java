@@ -17,15 +17,16 @@
  * limitations under the License.
  */
 package de.vwsoft.barcodelib4j.oned;
+
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
 
-
 /**
- * Abstract class with common functionality for UPC/EAN barcode types and their derivatives.
+ * Abstract class with common functionality for UPC/EAN barcode types and their
+ * derivatives.
  * <p>
  * This class is implemented by:
  * <ul>
@@ -59,8 +60,6 @@ public abstract class UPCEANFamily extends Barcode {
   // Abstract methods
   abstract String getBarLengthPattern();
 
-
-
   @Override
   public void setAddOn(String addOnNumber) throws BarcodeException {
     if (addOnNumber != null) {
@@ -82,14 +81,10 @@ public abstract class UPCEANFamily extends Barcode {
     invalidateDrawing(); // Reset cached bars to force recalculation on the next drawing
   }
 
-
-
   @Override
   public String getAddOn() {
     return myAddOn;
   }
-
-
 
   /** @hidden */
   @Override
@@ -97,23 +92,17 @@ public abstract class UPCEANFamily extends Barcode {
     return true;
   }
 
-
-
   /** @hidden */
   @Override
   public boolean supportsCustomText() {
     return false;
   }
 
-
-
   /** @hidden */
   @Override
   public boolean supportsTextOnTop() {
     return false;
   }
-
-
 
   /**
    * Sets the parameters for drawing a non-specification-compliant line across the barcode symbol.
@@ -151,6 +140,7 @@ public abstract class UPCEANFamily extends Barcode {
 
   void encodeLeftPart(StringBuilder sb) {
   }
+
   void encodeRightPart(StringBuilder sb) {
   }
 
@@ -166,12 +156,12 @@ public abstract class UPCEANFamily extends Barcode {
         sb.append(m % 2 == 0 ? encodeA(myAddOn.charAt(1) - 48) : encodeB(myAddOn.charAt(1) - 48));
       } else { // if (myAddOn.length() == 5)
         int m = 0;
-        for (int i=4; i>=0; i--)
+        for (int i = 4; i >= 0; i--)
           m += (i % 2 == 0 ? 3 : 9) * (myAddOn.charAt(i) - 48);
         int parity = ADDON5_PARITIES[m % 10];
-        for (int i=4; i>=0; i--) {
-          sb.append(((parity >> i) & 0x1) == 0 ?
-                    encodeA(myAddOn.charAt(4 - i) - 48) : encodeB(myAddOn.charAt(4 - i) - 48));
+        for (int i = 4; i >= 0; i--) {
+          sb.append(
+              ((parity >> i) & 0x1) == 0 ? encodeA(myAddOn.charAt(4 - i) - 48) : encodeB(myAddOn.charAt(4 - i) - 48));
           if (i != 0)
             sb.append("01");
         }
@@ -179,8 +169,6 @@ public abstract class UPCEANFamily extends Barcode {
       sb.append("0".repeat(ADDON_RIGHT_QUIET_ZONE));
     }
   }
-
-
 
   /** @hidden */
   @Override
@@ -196,141 +184,180 @@ public abstract class UPCEANFamily extends Barcode {
     double fontHeight = 0.0;
     if (myIsTextVisible) {
       final Font font = myFont != null ? myFont : g2d.getFont();
-      float fontSize = font.getSize2D();
-      if (myIsFontSizeAdjusted) {
-        fontSize = 0F;
-        final double m = (myNumberPart2.length() * 7) * widthOfASingleBar;
-        do {
-          fontSize += FONT_SIZE_INCREMENT;
-          g2d.setFont(font.deriveFont(fontSize));
-        } while (g2d.getFontMetrics().getStringBounds(myNumberPart2, g2d).getWidth() < m);
-        fontSize -= FONT_SIZE_INCREMENT;
-      }
+      float fontSize = calculateFontSize(g2d, font, widthOfASingleBar);
 
       if (fontSize > 0F) {
         g2d.setFont(font.deriveFont(fontSize));
-        FontMetrics fm = g2d.getFontMetrics();
-        final double ascent = fm.getLineMetrics(myNumberPart2, g2d).getAscent();
-        final double descent = widthOfASingleBar * 1.5; // ignore font's own descent
-        fontHeight = ascent + descent + myTextOffset;
-        final float fy = (float)(y + h - descent);
-        // draw add-on number and calculate position for part 4 at the same time
-        int numberOfBars = myBarsCount;
-        if (myAddOn != null) {
-          final int numberOfAddOnBars = myAddOn.length() == 2 ? 20 : 47;
-          numberOfBars -= (numberOfAddOnBars + ADDON_RIGHT_QUIET_ZONE);
-          g2d.drawString(myAddOn, (float)(x + widthOfASingleBar *
-              numberOfBars + (numberOfAddOnBars * widthOfASingleBar -
-                  fm.getStringBounds(myAddOn, g2d).getWidth()) / 2.0),
-              (float)(y + myTextOffset + ascent));
-        }
-        // draw part 1
-        if (myNumberPart1 != null)
-          g2d.drawString(myNumberPart1, (float)x, fy);
-        // draw part 2; part 2 must not be 'null'!
-        double part2Pos = barLengthPattern.indexOf('0') + .5;
-        g2d.drawString(myNumberPart2, (float)(x + widthOfASingleBar *
-            (leftQuietZone + part2Pos) + (myNumberPart2.length() * 7 * widthOfASingleBar -
-            fm.getStringBounds(myNumberPart2, g2d).getWidth()) / 2.0), fy);
-        // draw part 3
-        if (myNumberPart3 != null) {
-          double part3Pos = barLengthPattern.indexOf('1', 30) + 4.5;
-          g2d.drawString(myNumberPart3, (float)(x + widthOfASingleBar *
-              (leftQuietZone + part3Pos) + (myNumberPart3.length() * 7 * widthOfASingleBar -
-              fm.getStringBounds(myNumberPart3, g2d).getWidth()) / 2.0), fy);
-        }
-        // draw part 4
-        if (myNumberPart4 != null)
-          g2d.drawString(myNumberPart4, (float)(x + widthOfASingleBar *
-              numberOfBars - fm.getStringBounds(myNumberPart4, g2d).getWidth()), fy);
+        fontHeight = drawNumberLabels(g2d, x, y, h, widthOfASingleBar,
+            leftQuietZone, barLengthPattern);
       }
 
-      if (myText != null) { // ISBN-13 and ISSN only
-        final int overhang = 5;
-        final double textWidth = (overhang * 2 + 95) * widthOfASingleBar;
-
-        Font font2 = new Font(Font.SANS_SERIF, Font.PLAIN, 1);
-        float fontSize2 = 0F;
-        do {
-          fontSize2 += FONT_SIZE_INCREMENT;
-          g2d.setFont(font2.deriveFont(fontSize2));
-        } while (g2d.getFontMetrics().getStringBounds(myText, g2d).getWidth() < textWidth);
-        fontSize2 -= FONT_SIZE_INCREMENT;
-
-        if (fontSize2 > 0F) {
-          g2d.setFont(font2.deriveFont(fontSize2));
-          FontMetrics fm = g2d.getFontMetrics();
-          g2d.drawString(myText, (float)(x + widthOfASingleBar * (leftQuietZone - overhang) +
-              (textWidth - fm.getStringBounds(myText, g2d).getWidth()) / 2.0),
-              (float)(y - fm.getLineMetrics(myText, g2d).getDescent()));
-        }
-      }
+      if (myText != null) // ISBN-13 and ISSN only
+        drawISBNText(g2d, x, y, widthOfASingleBar, leftQuietZone);
     }
 
     final double nonGuardBarHeight = h - fontHeight;
-    final double guardBarHeight = !myIsTextVisible ? nonGuardBarHeight :
-        nonGuardBarHeight + widthOfASingleBar * 5.0; // according to specification
+    final double guardBarHeight = !myIsTextVisible ? nonGuardBarHeight : nonGuardBarHeight + widthOfASingleBar * 5.0;
+
+    drawBars(g2d, x, y, widthOfASingleBar, nonGuardBarHeight, guardBarHeight,
+        fontHeight, barWidthCorrection, leftQuietZone, barLengthPattern);
+    drawTestBar(g2d, x, y, widthOfASingleBar, barWidthCorrection,
+        leftQuietZone, barLengthPattern);
+  }
+
+  private float calculateFontSize(Graphics2D g2d, Font font, double widthOfASingleBar) {
+    float fontSize = font.getSize2D();
+    if (myIsFontSizeAdjusted) {
+      fontSize = 0F;
+      final double m = (myNumberPart2.length() * 7) * widthOfASingleBar;
+      do {
+        fontSize += FONT_SIZE_INCREMENT;
+        g2d.setFont(font.deriveFont(fontSize));
+      } while (g2d.getFontMetrics().getStringBounds(myNumberPart2, g2d).getWidth() < m);
+      fontSize -= FONT_SIZE_INCREMENT;
+    }
+    return fontSize;
+  }
+
+  // Returns fontHeight for use in bar height calculations
+  private double drawNumberLabels(Graphics2D g2d, double x, double y, double h,
+      double widthOfASingleBar, int leftQuietZone, String barLengthPattern) {
+    FontMetrics fm = g2d.getFontMetrics();
+    final double ascent = fm.getLineMetrics(myNumberPart2, g2d).getAscent();
+    final double descent = widthOfASingleBar * 1.5; // ignore font's own descent
+    final double fontHeight = ascent + descent + myTextOffset;
+    final float fy = (float) (y + h - descent);
+    // draw add-on number and calculate position for part 4 at the same time
+    int numberOfBars = myBarsCount;
+    if (myAddOn != null) {
+      final int numberOfAddOnBars = myAddOn.length() == 2 ? 20 : 47;
+      numberOfBars -= (numberOfAddOnBars + ADDON_RIGHT_QUIET_ZONE);
+      g2d.drawString(myAddOn, (float) (x + widthOfASingleBar *
+          numberOfBars
+          + (numberOfAddOnBars * widthOfASingleBar -
+              fm.getStringBounds(myAddOn, g2d).getWidth()) / 2.0),
+          (float) (y + myTextOffset + ascent));
+    }
+    // draw part 1
+    if (myNumberPart1 != null)
+      g2d.drawString(myNumberPart1, (float) x, fy);
+    // draw part 2; part 2 must not be 'null'!
+    double part2Pos = barLengthPattern.indexOf('0') + .5;
+    g2d.drawString(myNumberPart2, (float) (x + widthOfASingleBar *
+        (leftQuietZone + part2Pos)
+        + (myNumberPart2.length() * 7 * widthOfASingleBar -
+            fm.getStringBounds(myNumberPart2, g2d).getWidth()) / 2.0),
+        fy);
+    // draw part 3
+    if (myNumberPart3 != null) {
+      double part3Pos = barLengthPattern.indexOf('1', 30) + 4.5;
+      g2d.drawString(myNumberPart3, (float) (x + widthOfASingleBar *
+          (leftQuietZone + part3Pos)
+          + (myNumberPart3.length() * 7 * widthOfASingleBar -
+              fm.getStringBounds(myNumberPart3, g2d).getWidth()) / 2.0),
+          fy);
+    }
+    // draw part 4
+    if (myNumberPart4 != null)
+      g2d.drawString(myNumberPart4, (float) (x + widthOfASingleBar *
+          numberOfBars - fm.getStringBounds(myNumberPart4, g2d).getWidth()), fy);
+    return fontHeight;
+  }
+
+  private void drawISBNText(Graphics2D g2d, double x, double y,
+      double widthOfASingleBar, int leftQuietZone) {
+    final int overhang = 5;
+    final double textWidth = (overhang * 2 + 95) * widthOfASingleBar;
+
+    Font font2 = new Font(Font.SANS_SERIF, Font.PLAIN, 1);
+    float fontSize2 = 0F;
+    do {
+      fontSize2 += FONT_SIZE_INCREMENT;
+      g2d.setFont(font2.deriveFont(fontSize2));
+    } while (g2d.getFontMetrics().getStringBounds(myText, g2d).getWidth() < textWidth);
+    fontSize2 -= FONT_SIZE_INCREMENT;
+
+    if (fontSize2 > 0F) {
+      g2d.setFont(font2.deriveFont(fontSize2));
+      FontMetrics fm = g2d.getFontMetrics();
+      g2d.drawString(myText, (float) (x + widthOfASingleBar * (leftQuietZone - overhang) +
+          (textWidth - fm.getStringBounds(myText, g2d).getWidth()) / 2.0),
+          (float) (y - fm.getLineMetrics(myText, g2d).getDescent()));
+    }
+  }
+
+  private void drawBars(Graphics2D g2d, double x, double y, double widthOfASingleBar,
+      double nonGuardBarHeight, double guardBarHeight, double fontHeight,
+      double barWidthCorrection, int leftQuietZone, String barLengthPattern) {
     final double addOnBarY = y + fontHeight;
     final double addOnBarHeight = guardBarHeight - fontHeight;
     final double xShifted = x - barWidthCorrection;
     final double bwcTwice = barWidthCorrection * 2.0;
     final Rectangle2D.Double rect = new Rectangle2D.Double(0.0, y, 0.0, 0.0);
-    for (int i=0; i!=myBars.length; i+=2) {
+    for (int i = 0; i != myBars.length; i += 2) {
       rect.x = xShifted + widthOfASingleBar * myBars[i];
       rect.width = widthOfASingleBar * myBars[i + 1] + bwcTwice;
       switch (barLengthPattern.charAt(myBars[i] - leftQuietZone)) {
-        case '0': rect.height = nonGuardBarHeight;  break;
-        case '1': rect.height = guardBarHeight;     break;
-        default : rect.height = addOnBarHeight; rect.y = addOnBarY;
+        case '0':
+          rect.height = nonGuardBarHeight;
+          break;
+        case '1':
+          rect.height = guardBarHeight;
+          break;
+        default:
+          rect.height = addOnBarHeight;
+          rect.y = addOnBarY;
       }
-      g2d.fill(rect);
-    }
-
-    if (myTestBar != null) {
-      final int addOnPos = barLengthPattern.indexOf('2', 51);
-      rect.x = xShifted + widthOfASingleBar * (leftQuietZone - myTestBar[2]);
-      rect.y = y + widthOfASingleBar * myTestBar[1];
-      rect.width = widthOfASingleBar * (addOnPos + 2 * myTestBar[2]) + bwcTwice;
-      rect.height = widthOfASingleBar * myTestBar[0];
       g2d.fill(rect);
     }
   }
 
-
+  private void drawTestBar(Graphics2D g2d, double x, double y, double widthOfASingleBar,
+      double barWidthCorrection, int leftQuietZone, String barLengthPattern) {
+    if (myTestBar == null)
+      return;
+    final double xShifted = x - barWidthCorrection;
+    final double bwcTwice = barWidthCorrection * 2.0;
+    final int addOnPos = barLengthPattern.indexOf('2', 51);
+    final Rectangle2D.Double rect = new Rectangle2D.Double();
+    rect.x = xShifted + widthOfASingleBar * (leftQuietZone - myTestBar[2]);
+    rect.y = y + widthOfASingleBar * myTestBar[1];
+    rect.width = widthOfASingleBar * (addOnPos + 2 * myTestBar[2]) + bwcTwice;
+    rect.height = widthOfASingleBar * myTestBar[0];
+    g2d.fill(rect);
+  }
 
   static String encodeA(int digit) {
     String s = Integer.toBinaryString(BARS[digit]);
     return "0".repeat(7 - s.length()) + s;
   }
 
-
-
   static String encodeB(int digit) {
     return new StringBuilder(encodeC(digit)).reverse().toString();
   }
 
-
-
   static String encodeC(int digit) {
     StringBuilder sb = new StringBuilder(7);
-    for (int i=6; i!=0; i--)
+    for (int i = 6; i != 0; i--)
       sb.append(((BARS[digit] >> i) & 1) ^ 1);
     return sb.append('0').toString();
   }
 
-
-
-  // Sets the content for ISBN-13 and ISSN barcode types only. The 'content' parameter must be
+  // Sets the content for ISBN-13 and ISSN barcode types only. The 'content'
+  // parameter must be
   // non-empty and must have the correct prefix prior to calling this method.
   final void setContentISxN(String content, boolean autoComplete, String typeName)
       throws BarcodeException {
 
-    // Split the ISxN string into parts and ensure it consists only of valid characters
-    // (digits and '-') without consecutive '-' characters. The string may end with '-' but,
-    // in that case, must consist of exactly 4 parts instead of 5, excluding a check digit.
+    // Split the ISxN string into parts and ensure it consists only of valid
+    // characters
+    // (digits and '-') without consecutive '-' characters. The string may end with
+    // '-' but,
+    // in that case, must consist of exactly 4 parts instead of 5, excluding a check
+    // digit.
     ArrayList<String> tokens = new ArrayList<>(5);
     StringBuilder sb = new StringBuilder(7);
-    for (int len=content.length(), i=0; i!=len; i++) {
+    for (int len = content.length(), i = 0; i != len; i++) {
       char c = content.charAt(i);
       if (isDigit(c)) {
         sb.append(c);
@@ -356,13 +383,13 @@ public abstract class UPCEANFamily extends Barcode {
           "Incorrect number of segments: %s",
           "Falsche Anzahl an Teilen: %s", numberOfTokens);
 
-    String isxnPrefix    = tokens.get(0);
-    String isxnGroup     = tokens.get(1);
+    String isxnPrefix = tokens.get(0);
+    String isxnGroup = tokens.get(1);
     String isxnPublisher = tokens.get(2);
-    String isxnItem      = tokens.get(3);
-    if ( isxnGroup.length()     > 5 ||
-         isxnPublisher.length() > 7 ||
-         isxnItem.length()      > 6 )
+    String isxnItem = tokens.get(3);
+    if (isxnGroup.length() > 5 ||
+        isxnPublisher.length() > 7 ||
+        isxnItem.length() > 6)
       throw new BarcodeException(BarcodeException.CONTENT_INVALID,
           "Some segments have incorrect length",
           "Einige Teile haben inkorrekte L\u00E4nge");

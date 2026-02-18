@@ -1,3 +1,5 @@
+package de.vwsoft.barcodelib4j;
+
 import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runners.MethodSorters;

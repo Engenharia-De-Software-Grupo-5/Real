@@ -464,6 +464,26 @@ public class BarExporter {
     final double[] d = new double[6];
     final double[] lastPoint = new double[2];
     final double[] controlPoint = new double[4];
+
+    this.appendPathOperators(sb, br, at, d, lastPoint, controlPoint);
+    apd(sb, "f", br); // Fill all paths at once
+
+    byte[] uncompressed = sb.toString().getBytes(StandardCharsets.US_ASCII);
+
+    Deflater deflater = new Deflater(Deflater.BEST_COMPRESSION);
+    deflater.setStrategy(Deflater.FILTERED); // Measured best compression for coordinate data
+    deflater.setInput(uncompressed);
+    deflater.finish();
+    ByteArrayOutputStream baos = new ByteArrayOutputStream(uncompressed.length / 2);
+    byte[] buffer = new byte[4096];
+    while (!deflater.finished())
+      baos.write(buffer, 0, deflater.deflate(buffer));
+    deflater.end();
+
+    return baos.toByteArray();
+  }
+
+  private void appendPathOperators(StringBuilder sb, String br, AffineTransform at, double[] d, double[] lastPoint, double[] controlPoint) {
     for (Shape shape : myGraphics2D.textShapes) {
       PathIterator pathIterator = shape.getPathIterator(at);
       while (!pathIterator.isDone()) {
@@ -499,21 +519,6 @@ public class BarExporter {
         pathIterator.next();
       }
     }
-    apd(sb, "f", br); // Fill all paths at once
-
-    byte[] uncompressed = sb.toString().getBytes(StandardCharsets.US_ASCII);
-
-    Deflater deflater = new Deflater(Deflater.BEST_COMPRESSION);
-    deflater.setStrategy(Deflater.FILTERED); // Measured best compression for coordinate data
-    deflater.setInput(uncompressed);
-    deflater.finish();
-    ByteArrayOutputStream baos = new ByteArrayOutputStream(uncompressed.length / 2);
-    byte[] buffer = new byte[4096];
-    while (!deflater.finished())
-      baos.write(buffer, 0, deflater.deflate(buffer));
-    deflater.end();
-
-    return baos.toByteArray();
   }
 
 
@@ -638,41 +643,7 @@ public class BarExporter {
     final double[] d = new double[6];
     final double[] lastPoint = new double[2];
     final double[] controlPoint = new double[4];
-    for (Shape shape : myGraphics2D.textShapes) {
-      PathIterator pathIterator = shape.getPathIterator(at);
-      while (!pathIterator.isDone()) {
-        switch (pathIterator.currentSegment(d)) {
-          case PathIterator.SEG_MOVETO:
-            apd(sb, d[0], ' ', d[1], " m", br);
-            lastPoint[0] = d[0];
-            lastPoint[1] = d[1];
-            break;
-          case PathIterator.SEG_LINETO:
-            apd(sb, d[0], ' ', d[1], " l", br);
-            lastPoint[0] = d[0];
-            lastPoint[1] = d[1];
-            break;
-          case PathIterator.SEG_QUADTO:
-            controlPoint[0] = d[0] + (lastPoint[0] - d[0]) / 3.0;
-            controlPoint[1] = d[1] + (lastPoint[1] - d[1]) / 3.0;
-            controlPoint[2] = d[0] + (d[2] - d[0]) / 3.0;
-            controlPoint[3] = d[1] + (d[3] - d[1]) / 3.0;
-            apd(sb, controlPoint[0], ' ', controlPoint[1], ' ', controlPoint[2], ' ',
-                controlPoint[3], ' ', d[2], ' ', d[3], " c", br);
-            lastPoint[0] = d[2];
-            lastPoint[1] = d[3];
-            break;
-          case PathIterator.SEG_CUBICTO:
-            apd(sb, d[0], ' ', d[1], ' ', d[2], ' ', d[3], ' ', d[4], ' ', d[5], " c", br);
-            lastPoint[0] = d[4];
-            lastPoint[1] = d[5];
-            break;
-          case PathIterator.SEG_CLOSE:
-            apd(sb, 'h', br);
-        }
-        pathIterator.next();
-      }
-    }
+    this.appendPathOperators(sb, br, at, d, lastPoint, controlPoint);
     apd(sb, "fill", br);
 
     out.write(sb.toString().getBytes(StandardCharsets.US_ASCII));
