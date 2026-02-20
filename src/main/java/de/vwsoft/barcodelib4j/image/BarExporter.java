@@ -290,24 +290,39 @@ public class BarExporter {
    *                                  for raster formats
    */
   public void write(OutputStream out, ImageFormat format, ImageColorModel colorModel,
-      int dpiResX, int dpiResY) throws IOException {
-    if (format == ImageFormat.PDF)
-      writePDF(out, colorModel);
-    else if (format == ImageFormat.EPS)
-      writeEPS(out, colorModel);
-    else if (format == ImageFormat.SVG)
-      writeSVG(out);
-    else {
-      if (dpiResX <= 0 || dpiResY <= 0)
-        throw new IllegalArgumentException("Resolution must be > 0 for raster formats");
+        int dpiResX, int dpiResY) throws IOException {
+
+      switch (format) {
+          case PDF:
+              writePDF(out, colorModel);
+              return; 
+          case EPS:
+              writeEPS(out, colorModel);
+              return;
+          case SVG:
+              writeSVG(out);
+              return;
+          default:
+            // continue for raster formats
+
+      if (dpiResX <= 0 || dpiResY <= 0) {
+          throw new IllegalArgumentException("Resolution must be > 0 for raster formats");
+      }
+
       BufferedImage img = createBufferedImage(dpiResX, dpiResY, format);
-      if (format == ImageFormat.PNG)
-        toPNG(img, out, dpiResX, dpiResY);
-      else if (format == ImageFormat.BMP)
-        toBMP(img, out, dpiResX, dpiResY);
-      else
-        toJPG(img, out, dpiResX, dpiResY, 1F);
-    }
+      switch (format) {
+          case PNG:
+              toPNG(img, out, dpiResX, dpiResY);
+              break;
+          case BMP:
+              toBMP(img, out, dpiResX, dpiResY);
+              break;
+          case JPG:
+              toJPG(img, out, dpiResX, dpiResY, 1F);
+              break;
+          default:
+              throw new IllegalArgumentException("Unsupported image format: " + format);
+      }
   }
 
 
