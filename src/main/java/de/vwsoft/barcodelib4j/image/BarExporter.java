@@ -303,8 +303,7 @@ public class BarExporter {
               writeSVG(out);
               return;
           default:
-            // continua para formatos raster      
-      }
+            // continue for raster formats
 
       if (dpiResX <= 0 || dpiResY <= 0) {
           throw new IllegalArgumentException("Resolution must be > 0 for raster formats");
