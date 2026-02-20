@@ -261,8 +261,6 @@ public class GS1Validator {
   private final String myContent; // The validated data for encoding in a GS1 barcode
   private final String myText;    // The validated data in human-readable format
 
-
-
   /**
    * Constructs a new instance and validates the provided GS1 data.
    *
@@ -271,96 +269,36 @@ public class GS1Validator {
    * @throws BarcodeException if the content is empty or invalid according to GS1 standards
    */
   public GS1Validator(String content, char fnc1Char) throws BarcodeException {
+    InitResult result = init(content, fnc1Char);
+    myContent = result.content;
+    myText = result.text;
+  }
+
+
+
+  private static InitResult init(String content, char fnc1Char) throws BarcodeException {
     final int len = content.length();
     StringBuilder sbContent = new StringBuilder(len);
     StringBuilder sbText = new StringBuilder(len);
     int idx = 0;
 
     while (true) {
-      while (idx != len && content.charAt(idx) == fnc1Char) // Skip FNC1 characters
-        idx++;
+      idx = skipFnc1Chars(content, fnc1Char, idx, len);
       if (idx == len)
         break;
 
       // Step 1: Extract the next Application Identifier (AI)
-      AI ai = null;
-      boolean embraced = content.charAt(idx) == '(';
-      if (embraced)
-        idx++; // Skip opening bracket
-      for (AI nextAI : APP_IDS) {
-        String s = nextAI.appId;
-        if (s.regionMatches(0, content, idx, s.length())) {
-          idx += s.length();
-          if (nextAI.maxY > 0) {
-            int n = idx < len ? content.charAt(idx) - 48 : -1;
-            if (n < 0 || n > nextAI.maxY)
-              throw new BarcodeException(BarcodeException.CONTENT_INVALID,
-                  "'n' in AI %sn at position %s must be between 0 and %s",
-                  "'n' in AI %sn an Position %s muss zwischen 0 und %s liegen",
-                  s, idx, nextAI.maxY);
-            s += n;
-            idx++; // Skip one more character
-          }
-          if (embraced) {
-            if (idx == len || content.charAt(idx) != ')')
-              throw new BarcodeException(BarcodeException.CONTENT_INVALID,
-                  "Closing bracket is missing at position %s",
-                  "Schlie\u00DFende Klammer fehlt an Position %s", idx);
-            idx++; // Skip closing bracket
-          }
-          sbContent.append(s);
-          sbText.append('(').append(s).append(')');
-          ai = nextAI;
-          break;
-        }
-      }
-      if (ai == null)
-        throw new BarcodeException(BarcodeException.CONTENT_INVALID,
-            "No valid AI found at position %s",
-            "Kein g\u00FCltiger AI an Position %s gefunden", idx);
+      Step1Result step1 = extractNextAI(content, idx, len, sbContent, sbText);
+      AI ai = step1.ai;
+      idx = step1.nextIdx;
 
       // Step 2: Extract the data associated with the identified AI
-      String data;
-      int k;
-      if (ai.delimiter > 0) { // AI expects a fixed length of data
-        k = Math.min(idx + ai.delimiter, len); // Determine the maximum length to validate
-      } else {
-        k = content.indexOf(fnc1Char, idx);
-        if (ai.delimiter == L_BRACKET) {
-          int n = content.indexOf('(', idx);
-          if (n > 0)
-            k = k > 0 ? Math.min(k, n) : n;
-        }
-        if (k < 0)
-          k = len;
-      }
-      data = content.substring(idx, k);
+      Step2Result step2 = extractAIData(content, idx, len, ai, fnc1Char);
+      String data = step2.data;
+      int k = step2.endIdx;
 
       // Step 3: Validate the extracted data
-      if (ai.delimiter > 0 && ai.delimiter != data.length())
-        throw new BarcodeException(BarcodeException.CONTENT_LENGTH_INVALID,
-            "Value of AI %s must consist of %s characters; Provided: %s",
-            "Wert von AI %s muss aus %s Zeichen bestehen; Aktuell: %s",
-            ai.appId, ai.delimiter, data.length());
-      if (ai == APP_IDS[0] || ai == APP_IDS[1] || ai == APP_IDS[2]) {
-        if (data.charAt(ai.delimiter - 1) == CHECKSUM_PLACEHOLDER) {
-          data = data.substring(0, ai.delimiter - 1);
-          validateDigits(data, ai);
-          data += calculateModulo10(data);
-        } else {
-          validateDigits(data, ai);
-          validateModulo10(data);
-        }
-      } else if (!ai.matches(data)) {
-        if (ai.isYYMMDD())
-          throw new BarcodeException(BarcodeException.CONTENT_INVALID,
-              "Value of AI %s is not a real date in YYMMDD format",
-              "Wert von AI %s ist kein reales Datum im Format JJMMTT", ai.appId);
-        else
-          throw new BarcodeException(BarcodeException.CONTENT_INVALID,
-              "Value of AI %s does not conform to its schema",
-              "Wert von AI %s entspricht nicht dessen Schema", ai.appId);
-      }
+      data = validateAIData(ai, data);
 
       sbContent.append(data);
       sbText.append(data);
@@ -380,12 +318,136 @@ public class GS1Validator {
     }
 
     validateNotEmpty(sbContent); // Check this first after all possible FNC1 chars have been removed
-
-    myContent = sbContent.toString();
-    myText = sbText.toString();
+    return new InitResult(sbContent.toString(), sbText.toString());
   }
 
+  private static int skipFnc1Chars(String content, char fnc1Char, int idx, int len) {
+    while (idx != len && content.charAt(idx) == fnc1Char) // Skip FNC1 characters
+      idx++;
+    return idx;
+  }
 
+  private static Step1Result extractNextAI(String content, int idx, int len,
+      StringBuilder sbContent, StringBuilder sbText) throws BarcodeException {
+    int startIdx = idx;
+    AI ai = null;
+    String appId = null;
+    boolean embraced = content.charAt(idx) == '(';
+    if (embraced)
+      idx++; // Skip opening bracket
+    for (AI nextAI : APP_IDS) {
+      String s = nextAI.appId;
+      if (s.regionMatches(0, content, idx, s.length())) {
+        idx += s.length();
+        if (nextAI.maxY > 0) {
+          int n = idx < len ? content.charAt(idx) - 48 : -1;
+          if (n < 0 || n > nextAI.maxY)
+            throw new BarcodeException(BarcodeException.CONTENT_INVALID,
+                "'n' in AI %sn at position %s must be between 0 and %s",
+                "'n' in AI %sn an Position %s muss zwischen 0 und %s liegen",
+                s, idx, nextAI.maxY);
+          s += n;
+          idx++; // Skip one more character
+        }
+        if (embraced) {
+          if (idx == len || content.charAt(idx) != ')')
+            throw new BarcodeException(BarcodeException.CONTENT_INVALID,
+                "Closing bracket is missing at position %s",
+                "Schlie\u00DFende Klammer fehlt an Position %s", idx);
+          idx++; // Skip closing bracket
+        }
+        ai = nextAI;
+        appId = s;
+        break;
+      }
+    }
+    if (ai == null)
+      throw new BarcodeException(BarcodeException.CONTENT_INVALID,
+          "No valid AI found at position %s",
+          "Kein g\u00FCltiger AI an Position %s gefunden", startIdx);
+
+    sbContent.append(appId);
+    sbText.append('(').append(appId).append(')');
+    return new Step1Result(ai, idx);
+  }
+
+  private static Step2Result extractAIData(String content, int idx, int len, AI ai, char fnc1Char) {
+    int endIdx;
+    if (ai.delimiter > 0) { // AI expects a fixed length of data
+      endIdx = Math.min(idx + ai.delimiter, len); // Determine the maximum length to validate
+    } else {
+      endIdx = content.indexOf(fnc1Char, idx);
+      if (ai.delimiter == L_BRACKET) {
+        int n = content.indexOf('(', idx);
+        if (n > 0)
+          endIdx = endIdx > 0 ? Math.min(endIdx, n) : n;
+      }
+      if (endIdx < 0)
+        endIdx = len;
+    }
+    return new Step2Result(content.substring(idx, endIdx), endIdx);
+  }
+
+  private static String validateAIData(AI ai, String data) throws BarcodeException {
+    if (ai.delimiter > 0 && ai.delimiter != data.length())
+      throw new BarcodeException(BarcodeException.CONTENT_LENGTH_INVALID,
+          "Value of AI %s must consist of %s characters; Provided: %s",
+          "Wert von AI %s muss aus %s Zeichen bestehen; Aktuell: %s",
+          ai.appId, ai.delimiter, data.length());
+    if (ai == APP_IDS[0] || ai == APP_IDS[1] || ai == APP_IDS[2]) {
+      if (data.charAt(ai.delimiter - 1) == CHECKSUM_PLACEHOLDER) {
+        data = data.substring(0, ai.delimiter - 1);
+        validateDigits(data, ai);
+        data += calculateModulo10(data);
+      } else {
+        validateDigits(data, ai);
+        validateModulo10(data);
+      }
+    } else if (!ai.matches(data)) {
+      if (ai.isYYMMDD())
+        throw new BarcodeException(BarcodeException.CONTENT_INVALID,
+            "Value of AI %s is not a real date in YYMMDD format",
+            "Wert von AI %s ist kein reales Datum im Format JJMMTT", ai.appId);
+      else
+        throw new BarcodeException(BarcodeException.CONTENT_INVALID,
+            "Value of AI %s does not conform to its schema",
+            "Wert von AI %s entspricht nicht dessen Schema", ai.appId);
+    }
+    return data;
+  }
+
+  private static class Step1Result {
+
+    private final AI ai;
+    private final int nextIdx;
+
+    Step1Result(AI ai, int nextIdx) {
+      this.ai = ai;
+      this.nextIdx = nextIdx;
+    }
+  }
+
+  private static class Step2Result {
+
+    private final String data;
+    private final int endIdx;
+
+    Step2Result(String data, int endIdx) {
+      this.data = data;
+      this.endIdx = endIdx;
+    }
+  }
+
+  private static class InitResult {
+
+    private final String content;
+    private final String text;
+
+    InitResult(String content, String text) {
+      this.content = content;
+      this.text = text;
+    }
+  }
 
   private static void validateDigits(String value, AI ai) throws BarcodeException {
     if (findNonDigitPosition(value) >= 0)
@@ -393,8 +455,6 @@ public class GS1Validator {
           "Value of AI %s must consist of exactly %s digits",
           "Wert von AI %s muss aus genau %s Ziffern bestehen", ai.appId, ai.delimiter);
   }
-
-
 
   /**
    * {@return the validated data for encoding in a GS1 barcode}
