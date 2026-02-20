@@ -244,36 +244,6 @@ public class CompoundColor extends Color {
 
 
   /**
-   * {@return a hash code value for this object}
-   */
-  @Override
-  public int hashCode() {
-    return Long.hashCode(getRGBandCMYK());
-  }
-
-
-
-  /**
-   * Determines whether another object is equal to this {@code CompoundColor}.
-   * <p>
-   * The result is {@code true} if and only if the argument is not {@code null} and is a
-   * {@code CompoundColor} object that has the same RGB and CMYK values as this object.
-   *
-   * @param obj  the object to test for equality with this {@code CompoundColor}
-   * @return     {@code true} if the objects are the same, {@code false} otherwise
-   */
-  @Override
-  public boolean equals(Object obj) {
-    if (obj instanceof CompoundColor) {
-      CompoundColor cc = (CompoundColor)obj;
-      return cc.getRGB() == getRGB() && cc.getCMYK() == getCMYK();
-    }
-    return false;
-  }
-
-
-
-  /**
    * {@return a string representation of this {@code CompoundColor}}
    * <p>
    * This method is intended to be used only for debugging purposes.

@@ -32,6 +32,7 @@ import javax.imageio.*;
 import javax.imageio.metadata.*;
 import javax.imageio.stream.*;
 import org.w3c.dom.*;
+import java.util.function.BiConsumer;
 
 
 /**
@@ -457,10 +458,7 @@ public class BarExporter {
     apd(sb, getColorCommand(myForeground, colorModel, ImageFormat.PDF), br);
     AffineTransform at = new AffineTransform(MM_TO_POINTS, 0.0, 0.0, -MM_TO_POINTS, 0.0, docSize.y);
     at.concatenate(createTransform());
-    for (Rectangle2D r : myGraphics2D.barRectangles) {
-      r = at.createTransformedShape(r).getBounds2D();
-      apd(sb, r.getX(), ' ', r.getY(), ' ', r.getWidth(), ' ', r.getHeight(), " re", br);
-    }
+    appendRectangles(sb, at, " r", br);
     final double[] d = new double[6];
     final double[] lastPoint = new double[2];
     final double[] controlPoint = new double[4];
@@ -631,10 +629,7 @@ public class BarExporter {
     apd(sb, getColorCommand(myForeground, colorModel, ImageFormat.EPS), br);
     AffineTransform at = new AffineTransform(MM_TO_POINTS, 0.0, 0.0, -MM_TO_POINTS, 0.0, docSize.y);
     at.concatenate(createTransform());
-    for (Rectangle2D r : myGraphics2D.barRectangles) {
-      r = at.createTransformedShape(r).getBounds2D();
-      apd(sb, r.getX(), ' ', r.getY(), ' ', r.getWidth(), ' ', r.getHeight(), " r", br);
-    }
+    appendRectangles(sb, at, " re", br);
     final double[] d = new double[6];
     final double[] lastPoint = new double[2];
     final double[] controlPoint = new double[4];
@@ -869,40 +864,29 @@ public class BarExporter {
   }
 
 
+  private void appendRectangles(StringBuilder sb, AffineTransform at, String operator, String br) {
+    for (Rectangle2D r : myGraphics2D.barRectangles) {
+      r = at.createTransformedShape(r).getBounds2D();
+      apd(sb, r.getX(), ' ', r.getY(), ' ', r.getWidth(), ' ', r.getHeight(), operator, br);
+    }
+  }
+
+
 
   private static void toPNG(BufferedImage img, OutputStream out, int dpiResX, int dpiResY)
-      throws IOException {
-    final String neededFormatName = "javax_imageio_png_1.0";
-    ImageWriter imageWriter = null;
-    IIOMetadata iiomd = null;
-    Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("png");
-    while (writers.hasNext()) {
-      ImageWriter w = writers.next();
-      iiomd = w.getDefaultImageMetadata(new ImageTypeSpecifier(img), w.getDefaultWriteParam());
-      if (neededFormatName.equals(iiomd.getNativeMetadataFormatName())) {
-        imageWriter = w;
-        break;
-      }
-    }
-    if (imageWriter == null)
-      throw new IOException("No suitable PNG ImageWriter found");
-
-    try (ImageOutputStream ios = new MemoryCacheImageOutputStream(out)) {
+          throws IOException {
+    writeImage(img, out, "png", "javax_imageio_png_1.0", (iiomd, param, format) -> {
       try {
-        IIOMetadataNode rootNode = (IIOMetadataNode)iiomd.getAsTree(neededFormatName);
+        IIOMetadataNode rootNode = (IIOMetadataNode)iiomd.getAsTree(format);
         IIOMetadataNode pHYSNode = ensureChildNode(rootNode, "pHYs");
         pHYSNode.setAttribute("unitSpecifier", "meter");
         pHYSNode.setAttribute("pixelsPerUnitXAxis", Long.toString(Math.round(dpiResX / 0.0254)));
         pHYSNode.setAttribute("pixelsPerUnitYAxis", Long.toString(Math.round(dpiResY / 0.0254)));
-        iiomd.setFromTree(neededFormatName, rootNode);
+        iiomd.setFromTree(format, rootNode);
       } catch (Exception e) {
         throw new IOException("Failed to apply DPI metadata to PNG image", e);
       }
-      imageWriter.setOutput(ios);
-      imageWriter.write(new IIOImage(img, null, iiomd));
-    } finally {
-      imageWriter.dispose();
-    }
+    });
   }
 
 
@@ -947,38 +931,49 @@ public class BarExporter {
 
 
   private static void toJPG(BufferedImage img, OutputStream out, int dpiResX, int dpiResY,
-      float quality) throws IOException {
-    final String neededFormatName = "javax_imageio_jpeg_image_1.0";
+                            float quality) throws IOException {
+    writeImage(img, out, "jpg", "javax_imageio_jpeg_image_1.0", (iiomd, param, format) -> {
+      try {
+        param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+        param.setCompressionQuality(quality);
+        IIOMetadataNode root = (IIOMetadataNode)iiomd.getAsTree(format);
+        IIOMetadataNode n = ensureChildNode(ensureChildNode(root, "JPEGvariety"), "app0JFIF");
+        n.setAttribute("resUnits", "1"); // 1 = "dpi"
+        n.setAttribute("Xdensity", Integer.toString(dpiResX));
+        n.setAttribute("Ydensity", Integer.toString(dpiResY));
+        iiomd.setFromTree(format, root);
+      } catch (Exception e) {
+        throw new IOException("Failed to apply parameters to JPEG image", e);
+      }
+    });
+  }
+
+  private interface ImageConfigurator {
+    void configure(IIOMetadata metadata, ImageWriteParam param, String formatName) throws IOException;
+  }
+
+  private static void writeImage(BufferedImage img, OutputStream out, String formatName,
+                                 String nativeMetadataFormat, ImageConfigurator configurator) throws IOException {
     ImageWriter imageWriter = null;
     IIOMetadata iiomd = null;
-    Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName("jpg");
+    Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName(formatName);
     while (writers.hasNext()) {
       ImageWriter w = writers.next();
       iiomd = w.getDefaultImageMetadata(new ImageTypeSpecifier(img), w.getDefaultWriteParam());
-      if (neededFormatName.equals(iiomd.getNativeMetadataFormatName())) {
+      if (nativeMetadataFormat.equals(iiomd.getNativeMetadataFormatName())) {
         imageWriter = w;
         break;
       }
     }
     if (imageWriter == null)
-      throw new IOException("No suitable JPEG ImageWriter found");
+      throw new IOException("No suitable " + formatName.toUpperCase() + " ImageWriter found");
 
     try (ImageOutputStream ios = new MemoryCacheImageOutputStream(out)) {
-      try {
-        ImageWriteParam param = imageWriter.getDefaultWriteParam();
-        param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-        param.setCompressionQuality(quality);
-        IIOMetadataNode root = (IIOMetadataNode)iiomd.getAsTree(neededFormatName);
-        IIOMetadataNode n = ensureChildNode(ensureChildNode(root, "JPEGvariety"), "app0JFIF");
-        n.setAttribute("resUnits", "1"); // 1 = "dpi"
-        n.setAttribute("Xdensity", Integer.toString(dpiResX));
-        n.setAttribute("Ydensity", Integer.toString(dpiResY));
-        iiomd.setFromTree(neededFormatName, root);
-      } catch (Exception e) {
-        throw new IOException("Failed to apply parameters to JPEG image", e);
-      }
+      ImageWriteParam param = imageWriter.getDefaultWriteParam();
+      configurator.configure(iiomd, param, nativeMetadataFormat);
+
       imageWriter.setOutput(ios);
-      imageWriter.write(new IIOImage(img, null, iiomd));
+      imageWriter.write(null, new IIOImage(img, null, iiomd), param);
     } finally {
       imageWriter.dispose();
     }
